@@ -21,7 +21,6 @@ contract MajorityVotingMock is MajorityVotingBase {
         bytes calldata, /* _metadata */
         Action[] calldata, /* _actions */
         uint256, /* _allowFailureMap */
-        uint64, /* _startDate */
         uint64, /* _endDate */
         VoteOption, /* _voteOption */
         bool /* _tryEarlyExecution */
@@ -32,12 +31,25 @@ contract MajorityVotingMock is MajorityVotingBase {
     function createProposal(
         bytes calldata _metadata,
         Action[] calldata _actions,
+        uint256 _allowFailureMap,
+        uint64, /* _startDate */
+        uint64 _endDate,
+        VoteOption, /* _voteOption */
+        bool /* _tryEarlyExecution */
+    ) external pure override returns (uint256 proposalId) {
+        // Calls public function for permission check.
+        proposalId = createProposal(_metadata, _actions, 0, _endDate, VoteOption.None, false);
+    }
+
+    function createProposal(
+        bytes calldata _metadata,
+        Action[] calldata _actions,
         uint64 _startDate,
         uint64 _endDate,
         bytes memory
     ) external pure override returns (uint256 proposalId) {
         // Calls public function for permission check.
-        proposalId = createProposal(_metadata, _actions, 0, _startDate, _endDate, VoteOption.None, false);
+        proposalId = createProposal(_metadata, _actions, 0, _endDate, VoteOption.None, false);
     }
 
     function customProposalParamsABI() external pure override returns (string memory) {

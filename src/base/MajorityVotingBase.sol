@@ -218,7 +218,9 @@ abstract contract MajorityVotingBase is
     bytes4 internal constant MAJORITY_VOTING_BASE_INTERFACE_ID = this.minDuration.selector
         ^ this.minProposerVotingPower.selector ^ this.votingMode.selector ^ this.totalVotingPower.selector
         ^ this.getProposal.selector ^ this.updateVotingSettings.selector ^ this.updateMinApprovals.selector
-        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint64,uint8,bool)"));
+        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint8,bool)"))
+        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint64,uint8,bool)"))
+        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint64,uint64,bytes)"));
 
     /// @notice The ID of the permission required to call the `updateVotingSettings` function.
     bytes32 public constant UPDATE_VOTING_SETTINGS_PERMISSION_ID = keccak256("UPDATE_VOTING_SETTINGS_PERMISSION");
@@ -244,6 +246,10 @@ abstract contract MajorityVotingBase is
     /// @param limit The limit value.
     /// @param actual The actual value.
     error DateOutOfBounds(uint64 limit, uint64 actual);
+
+    /// @notice Thrown if a start date is not zero.
+    /// @param actual The actual value.
+    error StartDateDeprecated(uint64 actual);
 
     /// @notice Thrown if the minimal duration value is out of bounds (less than one hour or greater than 1 year).
     /// @param limit The limit value.
@@ -539,10 +545,31 @@ abstract contract MajorityVotingBase is
     ///     Uses bitmap representation.
     ///     If the bit at index `x` is 1, the tx succeeds even if the action at `x` failed.
     ///     Passing 0 will be treated as atomic execution.
-    /// @param _startDate The start date of the proposal vote.
-    ///     If 0, the current timestamp is used and the vote starts immediately.
     /// @param _endDate The end date of the proposal vote.
-    ///     If 0, `_startDate + minDuration` is used.
+    ///     If 0, the start date (current timestamp) + `minDuration` is used.
+    /// @param _voteOption The chosen vote option to be casted on proposal creation.
+    /// @param _tryEarlyExecution If `true`,  early execution is tried after the vote cast.
+    ///     The call does not revert if early execution is not possible.
+    /// @return proposalId The ID of the proposal.
+    function createProposal(
+        bytes calldata _metadata,
+        Action[] calldata _actions,
+        uint256 _allowFailureMap,
+        uint64 _endDate,
+        VoteOption _voteOption,
+        bool _tryEarlyExecution
+    ) external virtual returns (uint256 proposalId);
+
+    /// @notice Creates a new majority voting proposal.
+    /// @param _metadata The metadata of the proposal.
+    /// @param _actions The actions that will be executed after the proposal passes.
+    /// @param _allowFailureMap Allows proposal to succeed even if an action reverts.
+    ///     Uses bitmap representation.
+    ///     If the bit at index `x` is 1, the tx succeeds even if the action at `x` failed.
+    ///     Passing 0 will be treated as atomic execution.
+    /// @param _startDate Not used, it is always immediate (kept for backwards compatibility)
+    /// @param _endDate The end date of the proposal vote.
+    ///     If 0, the start date (current timestamp) + `minDuration` is used.
     /// @param _voteOption The chosen vote option to be casted on proposal creation.
     /// @param _tryEarlyExecution If `true`,  early execution is tried after the vote cast.
     ///     The call does not revert if early execution is not possible.
@@ -719,12 +746,10 @@ abstract contract MajorityVotingBase is
     }
 
     /// @notice Validates and returns the proposal dates.
-    /// @param _start The start date of the proposal.
-    ///     If 0, the current timestamp is used and the vote starts immediately.
     /// @param _end The end date of the proposal. If 0, `_start + minDuration` is used.
-    /// @return startDate The validated start date of the proposal.
+    /// @return startDate Current timestamp.
     /// @return endDate The validated end date of the proposal.
-    function _validateProposalDates(uint64 _start, uint64 _end)
+    function _validateEndDate(uint64 _end)
         internal
         view
         virtual
@@ -732,15 +757,8 @@ abstract contract MajorityVotingBase is
     {
         uint64 currentTimestamp = block.timestamp.toUint64();
 
-        if (_start == 0) {
-            startDate = currentTimestamp;
-        } else {
-            startDate = _start;
+        startDate = currentTimestamp;
 
-            if (startDate < currentTimestamp) {
-                revert DateOutOfBounds({limit: currentTimestamp, actual: startDate});
-            }
-        }
         // Since `minDuration` is limited to 1 year,
         // `startDate + minDuration` can only overflow if the `startDate` is after `type(uint64).max - minDuration`.
         // In this case, the proposal creation will revert and another date can be picked.

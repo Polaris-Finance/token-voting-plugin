@@ -28,7 +28,9 @@ contract MajorityVotingBaseTest is TestBase {
         ^ MajorityVotingBase.minProposerVotingPower.selector ^ MajorityVotingBase.votingMode.selector
         ^ MajorityVotingBase.totalVotingPower.selector ^ MajorityVotingBase.getProposal.selector
         ^ MajorityVotingBase.updateVotingSettings.selector ^ MajorityVotingBase.updateMinApprovals.selector
-        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint64,uint8,bool)"));
+        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint8,bool)"))
+        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint64,uint8,bool)"))
+        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint64,uint64,bytes)"));
 
     error AlreadyInitialized();
 
