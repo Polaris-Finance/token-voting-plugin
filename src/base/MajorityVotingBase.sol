@@ -154,12 +154,14 @@ abstract contract MajorityVotingBase is
     /// @param minParticipation The minimum participation value.
     ///     Its value has to be in the interval [0, 10^6] defined by `RATIO_BASE = 10**6`.
     /// @param minDuration The minimum duration of the proposal vote in seconds.
+    /// @param maxDuration The maximum duration of the proposal vote in seconds.
     /// @param minProposerVotingPower The minimum voting power required to create a proposal.
     struct VotingSettings {
         VotingMode votingMode;
         uint32 supportThreshold;
         uint32 minParticipation;
         uint64 minDuration;
+        uint64 maxDuration;
         uint256 minProposerVotingPower;
     }
 
@@ -215,7 +217,7 @@ abstract contract MajorityVotingBase is
     }
 
     /// @notice The [ERC-165](https://eips.ethereum.org/EIPS/eip-165) interface ID of the contract.
-    bytes4 internal constant MAJORITY_VOTING_BASE_INTERFACE_ID = this.minDuration.selector
+    bytes4 internal constant MAJORITY_VOTING_BASE_INTERFACE_ID = this.minDuration.selector ^ this.maxDuration.selector
         ^ this.minProposerVotingPower.selector ^ this.votingMode.selector ^ this.totalVotingPower.selector
         ^ this.getProposal.selector ^ this.updateVotingSettings.selector ^ this.updateMinApprovals.selector
         ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint8,bool)"))
@@ -256,6 +258,11 @@ abstract contract MajorityVotingBase is
     /// @param actual The actual value.
     error MinDurationOutOfBounds(uint64 limit, uint64 actual);
 
+    /// @notice Thrown if the maximum duration value is out of bounds (less than min duration or greater than 1 year).
+    /// @param limit The limit value.
+    /// @param actual The actual value.
+    error MaxDurationOutOfBounds(uint64 limit, uint64 actual);
+
     /// @notice Thrown when a proposal doesn't exist.
     /// @param proposalId The ID of the proposal which doesn't exist.
     error NonexistentProposal(uint256 proposalId);
@@ -283,12 +290,14 @@ abstract contract MajorityVotingBase is
     /// @param supportThreshold The support threshold value.
     /// @param minParticipation The minimum participation value.
     /// @param minDuration The minimum duration of the proposal vote in seconds.
+    /// @param maxDuration The maximum duration of the proposal vote in seconds.
     /// @param minProposerVotingPower The minimum voting power required to create a proposal.
     event VotingSettingsUpdated(
         VotingMode votingMode,
         uint32 supportThreshold,
         uint32 minParticipation,
         uint64 minDuration,
+        uint64 maxDuration,
         uint256 minProposerVotingPower
     );
 
@@ -467,6 +476,12 @@ abstract contract MajorityVotingBase is
     /// @return The minimum duration parameter.
     function minDuration() public view virtual returns (uint64) {
         return votingSettings.minDuration;
+    }
+
+    /// @notice Returns the maximum duration parameter stored in the voting settings.
+    /// @return The maximum duration parameter.
+    function maxDuration() public view virtual returns (uint64) {
+        return votingSettings.maxDuration;
     }
 
     /// @notice Returns the minimum voting power required to create a proposal stored in the voting settings.
@@ -714,6 +729,14 @@ abstract contract MajorityVotingBase is
             revert MinDurationOutOfBounds({limit: 365 days, actual: _votingSettings.minDuration});
         }
 
+        if (_votingSettings.maxDuration < _votingSettings.minDuration) {
+            revert MaxDurationOutOfBounds({limit: _votingSettings.minDuration, actual: _votingSettings.maxDuration});
+        }
+
+        if (_votingSettings.maxDuration > 365 days) {
+            revert MaxDurationOutOfBounds({limit: 365 days, actual: _votingSettings.maxDuration});
+        }
+
         votingSettings = _votingSettings;
 
         emit VotingSettingsUpdated({
@@ -721,6 +744,7 @@ abstract contract MajorityVotingBase is
             supportThreshold: _votingSettings.supportThreshold,
             minParticipation: _votingSettings.minParticipation,
             minDuration: _votingSettings.minDuration,
+            maxDuration: _votingSettings.maxDuration,
             minProposerVotingPower: _votingSettings.minProposerVotingPower
         });
     }
@@ -771,6 +795,11 @@ abstract contract MajorityVotingBase is
 
             if (endDate < earliestEndDate) {
                 revert DateOutOfBounds({limit: earliestEndDate, actual: endDate});
+            }
+
+            uint64 latestEndDate = startDate + votingSettings.maxDuration;
+            if (endDate > latestEndDate) {
+                revert DateOutOfBounds({limit: latestEndDate, actual: endDate});
             }
         }
     }

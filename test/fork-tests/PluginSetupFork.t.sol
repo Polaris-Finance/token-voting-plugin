@@ -94,7 +94,7 @@ contract PluginSetupForkTest is ForkTestBase {
         bytes memory installData;
         {
             MajorityVotingBase.VotingSettings memory votingSettings = MajorityVotingBase.VotingSettings(
-                MajorityVotingBase.VotingMode.EarlyExecution, 500_000, 200_000, 1 hours, 0
+                MajorityVotingBase.VotingMode.EarlyExecution, 500_000, 200_000, 1 hours, 14 days, 0
             );
             TokenVotingSetup.TokenSettings memory tokenSettings =
                 TokenVotingSetup.TokenSettings({addr: address(existingToken), name: "Test Token", symbol: "TTK"});
@@ -196,7 +196,7 @@ contract PluginSetupForkTest is ForkTestBase {
 
         {
             MajorityVotingBase.VotingSettings memory votingSettings = MajorityVotingBase.VotingSettings(
-                MajorityVotingBase.VotingMode.EarlyExecution, 500_000, 200_000, 1 hours, 0
+                MajorityVotingBase.VotingMode.EarlyExecution, 500_000, 200_000, 1 hours, 14 days, 0
             );
             TokenVotingSetup.TokenSettings memory tokenSettings =
                 TokenVotingSetup.TokenSettings({addr: address(0), name: "New Token", symbol: "NEW"});
@@ -303,7 +303,7 @@ contract PluginSetupForkTest is ForkTestBase {
         // Prepare installation data compatible with build 2
         // Assumes build 1 `prepareInstallation` signature was: (VotingSettings, TokenSettings, MintSettings)
         MajorityVotingBase.VotingSettings memory votingSettings =
-            MajorityVotingBase.VotingSettings(MajorityVotingBase.VotingMode.Standard, 500_000, 100_000, 1 hours, 0);
+            MajorityVotingBase.VotingSettings(MajorityVotingBase.VotingMode.Standard, 500_000, 100_000, 1 hours, 14 days, 0);
         TokenVotingSetup.TokenSettings memory tokenSettings =
             TokenVotingSetup.TokenSettings({addr: address(0), name: "Old Token", symbol: "OLD"});
         GovernanceERC20.MintSettings memory mintSettings =
