@@ -179,6 +179,7 @@ contract SimpleBuilder is TestBase {
             supportThreshold: supportThreshold,
             minParticipation: minParticipation,
             minDuration: minDuration,
+            maxDuration: 14 days,
             minProposerVotingPower: minProposerVotingPower
         });
 

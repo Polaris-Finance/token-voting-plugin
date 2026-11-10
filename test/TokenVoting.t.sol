@@ -64,6 +64,7 @@ contract TokenVotingTest is TestBase {
                 supportThreshold: 500_000,
                 minParticipation: 100_000,
                 minDuration: ONE_HOUR,
+                maxDuration: 14 days,
                 minProposerVotingPower: 0
             }),
             token,
@@ -89,6 +90,7 @@ contract TokenVotingTest is TestBase {
             supportThreshold: 400_000, // 40%
             minParticipation: 200_000, // 20%
             minDuration: ONE_DAY,
+            maxDuration: 14 days,
             minProposerVotingPower: 1 ether
         });
         uint256 minApprovals = 100_000; // 10%
@@ -232,6 +234,7 @@ contract TokenVotingTest is TestBase {
                 supportThreshold: 400_000, // 40%
                 minParticipation: 200_000, // 20%
                 minDuration: ONE_DAY,
+                maxDuration: 14 days,
                 minProposerVotingPower: 0
             });
             uint256 minApprovals = 1_000_000; // 100%
@@ -288,6 +291,7 @@ contract TokenVotingTest is TestBase {
             supportThreshold: 400_000, // 40%
             minParticipation: 200_000, // 20%
             minDuration: ONE_DAY,
+            maxDuration: 14 days,
             minProposerVotingPower: 0
         });
         uint256 minApprovals = 1_000_000; // 100%
@@ -355,9 +359,9 @@ contract TokenVotingTest is TestBase {
 
     function test_WhenCallingSupportsInterfaceForMajorityVotingBase() external givenInTheERC165Context {
         // It supports the `MajorityVotingBase` interface
-        bytes4 interfaceId = plugin.minDuration.selector ^ plugin.minProposerVotingPower.selector
-            ^ plugin.votingMode.selector ^ plugin.totalVotingPower.selector ^ plugin.getProposal.selector
-            ^ plugin.updateVotingSettings.selector ^ plugin.updateMinApprovals.selector
+        bytes4 interfaceId = plugin.minDuration.selector ^ plugin.maxDuration.selector
+            ^ plugin.minProposerVotingPower.selector ^ plugin.votingMode.selector ^ plugin.totalVotingPower.selector
+            ^ plugin.getProposal.selector ^ plugin.updateVotingSettings.selector ^ plugin.updateMinApprovals.selector
             ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint8,bool)"))
             ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint64,uint8,bool)"))
             ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint64,uint64,bytes)"));
@@ -366,9 +370,9 @@ contract TokenVotingTest is TestBase {
 
     function test_WhenCallingSupportsInterfaceForTheOldMajorityVotingBase() external givenInTheERC165Context {
         // It supports the `MajorityVotingBase` OLD interface
-        bytes4 interfaceId = plugin.minDuration.selector ^ plugin.minProposerVotingPower.selector
-            ^ plugin.votingMode.selector ^ plugin.totalVotingPower.selector ^ plugin.getProposal.selector
-            ^ plugin.updateVotingSettings.selector
+        bytes4 interfaceId = plugin.minDuration.selector ^ plugin.maxDuration.selector
+            ^ plugin.minProposerVotingPower.selector ^ plugin.votingMode.selector ^ plugin.totalVotingPower.selector
+            ^ plugin.getProposal.selector ^ plugin.updateVotingSettings.selector
             ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint8,bool)"))
             ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint64,uint8,bool)"))
             ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint64,uint64,bytes)"));
@@ -819,6 +823,24 @@ contract TokenVotingTest is TestBase {
         vm.expectRevert(
             abi.encodeWithSelector(
                 MajorityVotingBase.DateOutOfBounds.selector, earliestEndDate, invalidEndDate
+            )
+        );
+        vm.prank(alice);
+        plugin.createProposal(
+            "0x", new Action[](0), 0, 0, invalidEndDate, IMajorityVoting.VoteOption.None, false
+        );
+    }
+
+    function test_WhenTheEndDateIsAfterTheMaximumDuration() external givenInTheProposalCreationContext {
+        (dao, plugin,,) = new SimpleBuilder().build();
+        dao.grant(address(plugin), alice, plugin.CREATE_PROPOSAL_PERMISSION_ID());
+
+        // It reverts if the end date is after the latest end date so that max duration is exceeded
+        uint64 latestEndDate = uint64(block.timestamp + plugin.maxDuration());
+        uint64 invalidEndDate = latestEndDate + 1;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MajorityVotingBase.DateOutOfBounds.selector, latestEndDate, invalidEndDate
             )
         );
         vm.prank(alice);
