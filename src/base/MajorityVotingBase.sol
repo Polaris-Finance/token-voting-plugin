@@ -779,13 +779,9 @@ abstract contract MajorityVotingBase is
         virtual
         returns (uint64 startDate, uint64 endDate)
     {
-        uint64 currentTimestamp = block.timestamp.toUint64();
+        startDate = block.timestamp.toUint64();
 
-        startDate = currentTimestamp;
-
-        // Since `minDuration` is limited to 1 year,
-        // `startDate + minDuration` can only overflow if the `startDate` is after `type(uint64).max - minDuration`.
-        // In this case, the proposal creation will revert and another date can be picked.
+        // Since `minDuration` is limited to 1 year, and `startDate` is current timestamp, this cannot overflow
         uint64 earliestEndDate = startDate + votingSettings.minDuration;
 
         if (_end == 0) {
@@ -797,6 +793,7 @@ abstract contract MajorityVotingBase is
                 revert DateOutOfBounds({limit: earliestEndDate, actual: endDate});
             }
 
+            // Since `maxDuration` is limited to 1 year, and `startDate` is current timestamp, this cannot overflow
             uint64 latestEndDate = startDate + votingSettings.maxDuration;
             if (endDate > latestEndDate) {
                 revert DateOutOfBounds({limit: latestEndDate, actual: endDate});
