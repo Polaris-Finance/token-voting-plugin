@@ -152,35 +152,42 @@ contract TokenVoting is IMembership, MajorityVotingBase {
         return votingToken.getPastTotalSupply(_timePoint) - _excludedSupply;
     }
 
+    // To avoid stack too deep issue
+    struct CreateProposalVars {
+        uint256 snapshotTimepoint;
+        uint256 totalVotingPower;
+        uint64 startDate;
+    }
+
     /// @inheritdoc MajorityVotingBase
     /// @dev Requires the `CREATE_PROPOSAL_PERMISSION_ID` permission.
     function createProposal(
         bytes calldata _metadata,
         Action[] calldata _actions,
         uint256 _allowFailureMap,
-        uint64 _startDate,
         uint64 _endDate,
         VoteOption _voteOption,
         bool _tryEarlyExecution
     ) public override auth(CREATE_PROPOSAL_PERMISSION_ID) returns (uint256 proposalId) {
-        uint256 snapshotTimepoint;
+        CreateProposalVars memory v;
+
         unchecked {
             // The time point must be already mined (block) or in the past (timestamp) to
             // protect against backrunning transactions causing census changes.
             if (tokenIndexedByTimestamp) {
-                snapshotTimepoint = block.timestamp - 1;
+                v.snapshotTimepoint = block.timestamp - 1;
             } else {
-                snapshotTimepoint = block.number - 1;
+                v.snapshotTimepoint = block.number - 1;
             }
         }
 
-        uint256 totalVotingPower_ = totalVotingPower(snapshotTimepoint);
+        v.totalVotingPower = totalVotingPower(v.snapshotTimepoint);
 
-        if (totalVotingPower_ == 0) {
+        if (v.totalVotingPower == 0) {
             revert NoVotingPower();
         }
 
-        (_startDate, _endDate) = _validateProposalDates(_startDate, _endDate);
+        (v.startDate, _endDate) = _validateEndDate(_endDate);
 
         proposalId = _createProposalId(keccak256(abi.encode(_actions, _metadata)));
 
@@ -191,14 +198,14 @@ contract TokenVoting is IMembership, MajorityVotingBase {
             revert ProposalAlreadyExists(proposalId);
         }
 
-        proposal_.parameters.startDate = _startDate;
+        proposal_.parameters.startDate = v.startDate;
         proposal_.parameters.endDate = _endDate;
-        proposal_.parameters.snapshotTimepoint = snapshotTimepoint.toUint64();
+        proposal_.parameters.snapshotTimepoint = v.snapshotTimepoint.toUint64();
         proposal_.parameters.votingMode = votingMode();
         proposal_.parameters.supportThreshold = supportThreshold();
-        proposal_.parameters.minVotingPower = _applyRatioCeiled(totalVotingPower_, minParticipation());
+        proposal_.parameters.minVotingPower = _applyRatioCeiled(v.totalVotingPower, minParticipation());
 
-        proposal_.minApprovalPower = _applyRatioCeiled(totalVotingPower_, minApproval());
+        proposal_.minApprovalPower = _applyRatioCeiled(v.totalVotingPower, minApproval());
 
         proposal_.targetConfig = getTargetConfig();
 
@@ -218,7 +225,21 @@ contract TokenVoting is IMembership, MajorityVotingBase {
             vote(proposalId, _voteOption, _tryEarlyExecution);
         }
 
-        _emitProposalCreatedEvent(_metadata, _actions, _allowFailureMap, proposalId, _startDate, _endDate);
+        _emitProposalCreatedEvent(_metadata, _actions, _allowFailureMap, proposalId, v.startDate, _endDate);
+    }
+
+    function createProposal(
+        bytes calldata _metadata,
+        Action[] calldata _actions,
+        uint256 _allowFailureMap,
+        uint64 _startDate,
+        uint64 _endDate,
+        VoteOption _voteOption,
+        bool _tryEarlyExecution
+    ) external override returns (uint256 proposalId) {
+        if (_startDate > 0) revert StartDateDeprecated(_startDate);
+        proposalId =
+            createProposal(_metadata, _actions, _allowFailureMap, _endDate, _voteOption, _tryEarlyExecution);
     }
 
     /// @inheritdoc IProposal
@@ -229,6 +250,7 @@ contract TokenVoting is IMembership, MajorityVotingBase {
         uint64 _endDate,
         bytes memory _data
     ) external override returns (uint256 proposalId) {
+        if (_startDate > 0) revert StartDateDeprecated(_startDate);
         // Note that this calls public function for permission check.
         uint256 allowFailureMap;
         VoteOption _voteOption = VoteOption.None;
@@ -239,7 +261,7 @@ contract TokenVoting is IMembership, MajorityVotingBase {
         }
 
         proposalId =
-            createProposal(_metadata, _actions, allowFailureMap, _startDate, _endDate, _voteOption, tryEarlyExecution);
+            createProposal(_metadata, _actions, allowFailureMap, _endDate, _voteOption, tryEarlyExecution);
     }
 
     /// @inheritdoc IProposal

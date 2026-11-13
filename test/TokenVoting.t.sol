@@ -64,6 +64,7 @@ contract TokenVotingTest is TestBase {
                 supportThreshold: 500_000,
                 minParticipation: 100_000,
                 minDuration: ONE_HOUR,
+                maxDuration: 14 days,
                 minProposerVotingPower: 0
             }),
             token,
@@ -89,6 +90,7 @@ contract TokenVotingTest is TestBase {
             supportThreshold: 400_000, // 40%
             minParticipation: 200_000, // 20%
             minDuration: ONE_DAY,
+            maxDuration: 14 days,
             minProposerVotingPower: 1 ether
         });
         uint256 minApprovals = 100_000; // 10%
@@ -232,6 +234,7 @@ contract TokenVotingTest is TestBase {
                 supportThreshold: 400_000, // 40%
                 minParticipation: 200_000, // 20%
                 minDuration: ONE_DAY,
+                maxDuration: 14 days,
                 minProposerVotingPower: 0
             });
             uint256 minApprovals = 1_000_000; // 100%
@@ -288,6 +291,7 @@ contract TokenVotingTest is TestBase {
             supportThreshold: 400_000, // 40%
             minParticipation: 200_000, // 20%
             minDuration: ONE_DAY,
+            maxDuration: 14 days,
             minProposerVotingPower: 0
         });
         uint256 minApprovals = 1_000_000; // 100%
@@ -355,19 +359,23 @@ contract TokenVotingTest is TestBase {
 
     function test_WhenCallingSupportsInterfaceForMajorityVotingBase() external givenInTheERC165Context {
         // It supports the `MajorityVotingBase` interface
-        bytes4 interfaceId = plugin.minDuration.selector ^ plugin.minProposerVotingPower.selector
-            ^ plugin.votingMode.selector ^ plugin.totalVotingPower.selector ^ plugin.getProposal.selector
-            ^ plugin.updateVotingSettings.selector ^ plugin.updateMinApprovals.selector
-            ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint64,uint8,bool)"));
+        bytes4 interfaceId = plugin.minDuration.selector ^ plugin.maxDuration.selector
+            ^ plugin.minProposerVotingPower.selector ^ plugin.votingMode.selector ^ plugin.totalVotingPower.selector
+            ^ plugin.getProposal.selector ^ plugin.updateVotingSettings.selector ^ plugin.updateMinApprovals.selector
+            ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint8,bool)"))
+            ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint64,uint8,bool)"))
+            ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint64,uint64,bytes)"));
         assertTrue(plugin.supportsInterface(interfaceId));
     }
 
     function test_WhenCallingSupportsInterfaceForTheOldMajorityVotingBase() external givenInTheERC165Context {
         // It supports the `MajorityVotingBase` OLD interface
-        bytes4 interfaceId = plugin.minDuration.selector ^ plugin.minProposerVotingPower.selector
-            ^ plugin.votingMode.selector ^ plugin.totalVotingPower.selector ^ plugin.getProposal.selector
-            ^ plugin.updateVotingSettings.selector
-            ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint64,uint8,bool)"));
+        bytes4 interfaceId = plugin.minDuration.selector ^ plugin.maxDuration.selector
+            ^ plugin.minProposerVotingPower.selector ^ plugin.votingMode.selector ^ plugin.totalVotingPower.selector
+            ^ plugin.getProposal.selector ^ plugin.updateVotingSettings.selector
+            ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint8,bool)"))
+            ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint64,uint8,bool)"))
+            ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint64,uint64,bytes)"));
         assertTrue(plugin.supportsInterface(interfaceId));
     }
 
@@ -718,19 +726,83 @@ contract TokenVotingTest is TestBase {
         (dao, plugin,,) = new SimpleBuilder().build();
         dao.grant(address(plugin), alice, plugin.CREATE_PROPOSAL_PERMISSION_ID());
 
-        // It reverts if the start date is set smaller than the current date
+        // It reverts if the start date is different than zero
         uint64 invalidStartDate = uint64(block.timestamp - 1);
         vm.prank(alice);
         vm.expectRevert(
-            abi.encodeWithSelector(MajorityVotingBase.DateOutOfBounds.selector, block.timestamp, invalidStartDate)
+            abi.encodeWithSelector(MajorityVotingBase.StartDateDeprecated.selector, invalidStartDate)
         );
         plugin.createProposal("0x", new Action[](0), 0, invalidStartDate, 0, IMajorityVoting.VoteOption.None, false);
     }
 
-    function test_WhenTheStartDateWouldCauseAnOverflowWhenCalculatingTheEndDate()
-        external
-        givenInTheProposalCreationContext
-    {
+
+    function test_WhenTheStartDateIsGreaterThanTheCurrentDate() external givenInTheProposalCreationContext {
+        (dao, plugin,,) = new SimpleBuilder().build();
+        dao.grant(address(plugin), alice, plugin.CREATE_PROPOSAL_PERMISSION_ID());
+
+        // It reverts if the start date is different than zero
+        uint64 invalidStartDate = uint64(block.timestamp + 1);
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(MajorityVotingBase.StartDateDeprecated.selector, invalidStartDate)
+        );
+        plugin.createProposal("0x", new Action[](0), 0, invalidStartDate, 0, IMajorityVoting.VoteOption.None, false);
+    }
+
+    function test_WhenTheStartDateIsEqualToTheCurrentDate() external givenInTheProposalCreationContext {
+        (dao, plugin,,) = new SimpleBuilder().build();
+        dao.grant(address(plugin), alice, plugin.CREATE_PROPOSAL_PERMISSION_ID());
+
+        // It reverts if the start date is different than zero
+        uint64 invalidStartDate = uint64(block.timestamp);
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(MajorityVotingBase.StartDateDeprecated.selector, invalidStartDate)
+        );
+        plugin.createProposal("0x", new Action[](0), 0, invalidStartDate, 0, IMajorityVoting.VoteOption.None, false);
+    }
+
+    function test_WhenTheStartDateIsSmallerThanTheCurrentDateDataVersion() external givenInTheProposalCreationContext {
+        (dao, plugin,,) = new SimpleBuilder().build();
+        dao.grant(address(plugin), alice, plugin.CREATE_PROPOSAL_PERMISSION_ID());
+
+        // It reverts if the start date is different than zero
+        uint64 invalidStartDate = uint64(block.timestamp - 1);
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(MajorityVotingBase.StartDateDeprecated.selector, invalidStartDate)
+        );
+        plugin.createProposal("0x", new Action[](0), invalidStartDate, 0, "0x");
+    }
+
+
+    function test_WhenTheStartDateIsGreaterThanTheCurrentDateDataVersion() external givenInTheProposalCreationContext {
+        (dao, plugin,,) = new SimpleBuilder().build();
+        dao.grant(address(plugin), alice, plugin.CREATE_PROPOSAL_PERMISSION_ID());
+
+        // It reverts if the start date is different than zero
+        uint64 invalidStartDate = uint64(block.timestamp + 1);
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(MajorityVotingBase.StartDateDeprecated.selector, invalidStartDate)
+        );
+        plugin.createProposal("0x", new Action[](0), invalidStartDate, 0, "0x");
+    }
+
+    function test_WhenTheStartDateIsEqualToTheCurrentDateDataVersion() external givenInTheProposalCreationContext {
+        (dao, plugin,,) = new SimpleBuilder().build();
+        dao.grant(address(plugin), alice, plugin.CREATE_PROPOSAL_PERMISSION_ID());
+
+        // It reverts if the start date is different than zero
+        uint64 invalidStartDate = uint64(block.timestamp);
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(MajorityVotingBase.StartDateDeprecated.selector, invalidStartDate)
+        );
+        plugin.createProposal("0x", new Action[](0), invalidStartDate, 0, "0x");
+    }
+
+    function test_WhenTheStartDateIsMaxUint64() external givenInTheProposalCreationContext {
         (dao, plugin,,) = new SimpleBuilder().build();
         dao.grant(address(plugin), alice, plugin.CREATE_PROPOSAL_PERMISSION_ID());
 
@@ -746,16 +818,34 @@ contract TokenVotingTest is TestBase {
         dao.grant(address(plugin), alice, plugin.CREATE_PROPOSAL_PERMISSION_ID());
 
         // It reverts if the end date is before the earliest end date so that min duration cannot be met
-        uint64 startDate = uint64(block.timestamp + ONE_HOUR);
-        uint64 invalidEndDate = startDate + uint64(plugin.minDuration() - 1);
+        uint64 earliestEndDate = uint64(block.timestamp + plugin.minDuration());
+        uint64 invalidEndDate = earliestEndDate - 1;
         vm.expectRevert(
             abi.encodeWithSelector(
-                MajorityVotingBase.DateOutOfBounds.selector, startDate + plugin.minDuration(), invalidEndDate
+                MajorityVotingBase.DateOutOfBounds.selector, earliestEndDate, invalidEndDate
             )
         );
         vm.prank(alice);
         plugin.createProposal(
-            "0x", new Action[](0), 0, startDate, invalidEndDate, IMajorityVoting.VoteOption.None, false
+            "0x", new Action[](0), 0, 0, invalidEndDate, IMajorityVoting.VoteOption.None, false
+        );
+    }
+
+    function test_WhenTheEndDateIsAfterTheMaximumDuration() external givenInTheProposalCreationContext {
+        (dao, plugin,,) = new SimpleBuilder().build();
+        dao.grant(address(plugin), alice, plugin.CREATE_PROPOSAL_PERMISSION_ID());
+
+        // It reverts if the end date is after the latest end date so that max duration is exceeded
+        uint64 latestEndDate = uint64(block.timestamp + plugin.maxDuration());
+        uint64 invalidEndDate = latestEndDate + 1;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MajorityVotingBase.DateOutOfBounds.selector, latestEndDate, invalidEndDate
+            )
+        );
+        vm.prank(alice);
+        plugin.createProposal(
+            "0x", new Action[](0), 0, 0, invalidEndDate, IMajorityVoting.VoteOption.None, false
         );
     }
 
@@ -837,22 +927,6 @@ contract TokenVotingTest is TestBase {
         assertEq(uint256(plugin.getVoteOption(proposalId, alice)), uint256(IMajorityVoting.VoteOption.Yes));
     }
 
-    function test_WhenCreatingAProposalWithAVoteOptionBeforeItsStartDate() external givenInTheProposalCreationContext {
-        (dao, plugin,,) = new SimpleBuilder().build();
-        dao.grant(address(plugin), alice, plugin.CREATE_PROPOSAL_PERMISSION_ID());
-
-        // It reverts creation when voting before the start date
-        vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                MajorityVotingBase.VoteCastForbidden.selector, PID_1, alice, IMajorityVoting.VoteOption.Yes
-            )
-        );
-        plugin.createProposal(
-            "0x", new Action[](0), 0, uint64(block.timestamp + 100), 0, IMajorityVoting.VoteOption.Yes, false
-        );
-    }
-
     modifier givenInTheStandardVotingMode() {
         address[] memory holders = new address[](10);
         for (uint256 i = 0; i < 10; i++) {
@@ -874,21 +948,6 @@ contract TokenVotingTest is TestBase {
         // It reverts if proposal does not exist
         vm.expectRevert(abi.encodeWithSelector(MajorityVotingBase.NonexistentProposal.selector, 999));
         plugin.canExecute(999);
-    }
-
-    function test_WhenVotingBeforeTheProposalHasStarted() external givenInTheStandardVotingMode {
-        // It does not allow voting, when the vote has not started yet
-        uint64 futureDate = uint64(block.timestamp + 1 days);
-        uint256 proposalId =
-            plugin.createProposal("0x", new Action[](0), 0, futureDate, 0, IMajorityVoting.VoteOption.None, false);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                MajorityVotingBase.VoteCastForbidden.selector, proposalId, vm.addr(100), IMajorityVoting.VoteOption.Yes
-            )
-        );
-        vm.prank(vm.addr(100));
-        plugin.vote(proposalId, IMajorityVoting.VoteOption.Yes, false);
     }
 
     function test_WhenAUserWith0TokensTriesToVote() external givenInTheStandardVotingMode {
@@ -1063,21 +1122,6 @@ contract TokenVotingTest is TestBase {
         // It reverts if proposal does not exist
         vm.expectRevert(abi.encodeWithSelector(MajorityVotingBase.NonexistentProposal.selector, 999));
         plugin.hasSucceeded(999);
-    }
-
-    function test_WhenVotingBeforeTheProposalHasStarted2() external givenInTheEarlyExecutionVotingMode {
-        // It does not allow voting, when the vote has not started yet
-        uint64 futureDate = uint64(block.timestamp + 1 days);
-        uint256 proposalId =
-            plugin.createProposal("0x", new Action[](0), 0, futureDate, 0, IMajorityVoting.VoteOption.None, false);
-
-        vm.prank(vm.addr(100));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                MajorityVotingBase.VoteCastForbidden.selector, proposalId, vm.addr(100), IMajorityVoting.VoteOption.Yes
-            )
-        );
-        plugin.vote(proposalId, IMajorityVoting.VoteOption.Yes, false);
     }
 
     function test_WhenAUserWith0TokensTriesToVote2() external givenInTheEarlyExecutionVotingMode {
@@ -1295,20 +1339,6 @@ contract TokenVotingTest is TestBase {
     function test_WhenInteractingWithANonexistentProposal3() external givenInTheVoteReplacementVotingMode {
         vm.expectRevert(abi.encodeWithSelector(MajorityVotingBase.NonexistentProposal.selector, 999));
         plugin.canVote(999, alice, IMajorityVoting.VoteOption.Yes);
-    }
-
-    function test_WhenVotingBeforeTheProposalHasStarted3() external givenInTheVoteReplacementVotingMode {
-        uint64 futureDate = uint64(block.timestamp + 1 days);
-        uint256 proposalId =
-            plugin.createProposal("0x", new Action[](0), 0, futureDate, 0, IMajorityVoting.VoteOption.None, false);
-
-        vm.prank(vm.addr(100));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                MajorityVotingBase.VoteCastForbidden.selector, proposalId, vm.addr(100), IMajorityVoting.VoteOption.Yes
-            )
-        );
-        plugin.vote(proposalId, IMajorityVoting.VoteOption.Yes, false);
     }
 
     function test_WhenAUserWith0TokensTriesToVote3() external givenInTheVoteReplacementVotingMode {
