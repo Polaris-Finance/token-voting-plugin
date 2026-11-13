@@ -154,12 +154,14 @@ abstract contract MajorityVotingBase is
     /// @param minParticipation The minimum participation value.
     ///     Its value has to be in the interval [0, 10^6] defined by `RATIO_BASE = 10**6`.
     /// @param minDuration The minimum duration of the proposal vote in seconds.
+    /// @param maxDuration The maximum duration of the proposal vote in seconds.
     /// @param minProposerVotingPower The minimum voting power required to create a proposal.
     struct VotingSettings {
         VotingMode votingMode;
         uint32 supportThreshold;
         uint32 minParticipation;
         uint64 minDuration;
+        uint64 maxDuration;
         uint256 minProposerVotingPower;
     }
 
@@ -215,10 +217,12 @@ abstract contract MajorityVotingBase is
     }
 
     /// @notice The [ERC-165](https://eips.ethereum.org/EIPS/eip-165) interface ID of the contract.
-    bytes4 internal constant MAJORITY_VOTING_BASE_INTERFACE_ID = this.minDuration.selector
+    bytes4 internal constant MAJORITY_VOTING_BASE_INTERFACE_ID = this.minDuration.selector ^ this.maxDuration.selector
         ^ this.minProposerVotingPower.selector ^ this.votingMode.selector ^ this.totalVotingPower.selector
         ^ this.getProposal.selector ^ this.updateVotingSettings.selector ^ this.updateMinApprovals.selector
-        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint64,uint8,bool)"));
+        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint8,bool)"))
+        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint64,uint8,bool)"))
+        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint64,uint64,bytes)"));
 
     /// @notice The ID of the permission required to call the `updateVotingSettings` function.
     bytes32 public constant UPDATE_VOTING_SETTINGS_PERMISSION_ID = keccak256("UPDATE_VOTING_SETTINGS_PERMISSION");
@@ -245,10 +249,19 @@ abstract contract MajorityVotingBase is
     /// @param actual The actual value.
     error DateOutOfBounds(uint64 limit, uint64 actual);
 
+    /// @notice Thrown if a start date is not zero.
+    /// @param actual The actual value.
+    error StartDateDeprecated(uint64 actual);
+
     /// @notice Thrown if the minimal duration value is out of bounds (less than one hour or greater than 1 year).
     /// @param limit The limit value.
     /// @param actual The actual value.
     error MinDurationOutOfBounds(uint64 limit, uint64 actual);
+
+    /// @notice Thrown if the maximum duration value is out of bounds (less than min duration or greater than 1 year).
+    /// @param limit The limit value.
+    /// @param actual The actual value.
+    error MaxDurationOutOfBounds(uint64 limit, uint64 actual);
 
     /// @notice Thrown when a proposal doesn't exist.
     /// @param proposalId The ID of the proposal which doesn't exist.
@@ -277,12 +290,14 @@ abstract contract MajorityVotingBase is
     /// @param supportThreshold The support threshold value.
     /// @param minParticipation The minimum participation value.
     /// @param minDuration The minimum duration of the proposal vote in seconds.
+    /// @param maxDuration The maximum duration of the proposal vote in seconds.
     /// @param minProposerVotingPower The minimum voting power required to create a proposal.
     event VotingSettingsUpdated(
         VotingMode votingMode,
         uint32 supportThreshold,
         uint32 minParticipation,
         uint64 minDuration,
+        uint64 maxDuration,
         uint256 minProposerVotingPower
     );
 
@@ -463,6 +478,12 @@ abstract contract MajorityVotingBase is
         return votingSettings.minDuration;
     }
 
+    /// @notice Returns the maximum duration parameter stored in the voting settings.
+    /// @return The maximum duration parameter.
+    function maxDuration() public view virtual returns (uint64) {
+        return votingSettings.maxDuration;
+    }
+
     /// @notice Returns the minimum voting power required to create a proposal stored in the voting settings.
     /// @return The minimum voting power required to create a proposal.
     function minProposerVotingPower() public view virtual returns (uint256) {
@@ -539,10 +560,31 @@ abstract contract MajorityVotingBase is
     ///     Uses bitmap representation.
     ///     If the bit at index `x` is 1, the tx succeeds even if the action at `x` failed.
     ///     Passing 0 will be treated as atomic execution.
-    /// @param _startDate The start date of the proposal vote.
-    ///     If 0, the current timestamp is used and the vote starts immediately.
     /// @param _endDate The end date of the proposal vote.
-    ///     If 0, `_startDate + minDuration` is used.
+    ///     If 0, the start date (current timestamp) + `minDuration` is used.
+    /// @param _voteOption The chosen vote option to be casted on proposal creation.
+    /// @param _tryEarlyExecution If `true`,  early execution is tried after the vote cast.
+    ///     The call does not revert if early execution is not possible.
+    /// @return proposalId The ID of the proposal.
+    function createProposal(
+        bytes calldata _metadata,
+        Action[] calldata _actions,
+        uint256 _allowFailureMap,
+        uint64 _endDate,
+        VoteOption _voteOption,
+        bool _tryEarlyExecution
+    ) external virtual returns (uint256 proposalId);
+
+    /// @notice Creates a new majority voting proposal.
+    /// @param _metadata The metadata of the proposal.
+    /// @param _actions The actions that will be executed after the proposal passes.
+    /// @param _allowFailureMap Allows proposal to succeed even if an action reverts.
+    ///     Uses bitmap representation.
+    ///     If the bit at index `x` is 1, the tx succeeds even if the action at `x` failed.
+    ///     Passing 0 will be treated as atomic execution.
+    /// @param _startDate Not used, it is always immediate (kept for backwards compatibility)
+    /// @param _endDate The end date of the proposal vote.
+    ///     If 0, the start date (current timestamp) + `minDuration` is used.
     /// @param _voteOption The chosen vote option to be casted on proposal creation.
     /// @param _tryEarlyExecution If `true`,  early execution is tried after the vote cast.
     ///     The call does not revert if early execution is not possible.
@@ -687,6 +729,14 @@ abstract contract MajorityVotingBase is
             revert MinDurationOutOfBounds({limit: 365 days, actual: _votingSettings.minDuration});
         }
 
+        if (_votingSettings.maxDuration < _votingSettings.minDuration) {
+            revert MaxDurationOutOfBounds({limit: _votingSettings.minDuration, actual: _votingSettings.maxDuration});
+        }
+
+        if (_votingSettings.maxDuration > 365 days) {
+            revert MaxDurationOutOfBounds({limit: 365 days, actual: _votingSettings.maxDuration});
+        }
+
         votingSettings = _votingSettings;
 
         emit VotingSettingsUpdated({
@@ -694,6 +744,7 @@ abstract contract MajorityVotingBase is
             supportThreshold: _votingSettings.supportThreshold,
             minParticipation: _votingSettings.minParticipation,
             minDuration: _votingSettings.minDuration,
+            maxDuration: _votingSettings.maxDuration,
             minProposerVotingPower: _votingSettings.minProposerVotingPower
         });
     }
@@ -719,31 +770,18 @@ abstract contract MajorityVotingBase is
     }
 
     /// @notice Validates and returns the proposal dates.
-    /// @param _start The start date of the proposal.
-    ///     If 0, the current timestamp is used and the vote starts immediately.
     /// @param _end The end date of the proposal. If 0, `_start + minDuration` is used.
-    /// @return startDate The validated start date of the proposal.
+    /// @return startDate Current timestamp.
     /// @return endDate The validated end date of the proposal.
-    function _validateProposalDates(uint64 _start, uint64 _end)
+    function _validateEndDate(uint64 _end)
         internal
         view
         virtual
         returns (uint64 startDate, uint64 endDate)
     {
-        uint64 currentTimestamp = block.timestamp.toUint64();
+        startDate = block.timestamp.toUint64();
 
-        if (_start == 0) {
-            startDate = currentTimestamp;
-        } else {
-            startDate = _start;
-
-            if (startDate < currentTimestamp) {
-                revert DateOutOfBounds({limit: currentTimestamp, actual: startDate});
-            }
-        }
-        // Since `minDuration` is limited to 1 year,
-        // `startDate + minDuration` can only overflow if the `startDate` is after `type(uint64).max - minDuration`.
-        // In this case, the proposal creation will revert and another date can be picked.
+        // Since `minDuration` is limited to 1 year, and `startDate` is current timestamp, this cannot overflow
         uint64 earliestEndDate = startDate + votingSettings.minDuration;
 
         if (_end == 0) {
@@ -753,6 +791,12 @@ abstract contract MajorityVotingBase is
 
             if (endDate < earliestEndDate) {
                 revert DateOutOfBounds({limit: earliestEndDate, actual: endDate});
+            }
+
+            // Since `maxDuration` is limited to 1 year, and `startDate` is current timestamp, this cannot overflow
+            uint64 latestEndDate = startDate + votingSettings.maxDuration;
+            if (endDate > latestEndDate) {
+                revert DateOutOfBounds({limit: latestEndDate, actual: endDate});
             }
         }
     }

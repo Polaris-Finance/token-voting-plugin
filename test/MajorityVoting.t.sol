@@ -25,10 +25,13 @@ contract MajorityVotingBaseTest is TestBase {
     MajorityVotingBase.VotingSettings internal defaultNewVotingSettings;
 
     bytes4 internal constant MAJORITY_VOTING_BASE_INTERFACE_ID = MajorityVotingBase.minDuration.selector
-        ^ MajorityVotingBase.minProposerVotingPower.selector ^ MajorityVotingBase.votingMode.selector
-        ^ MajorityVotingBase.totalVotingPower.selector ^ MajorityVotingBase.getProposal.selector
-        ^ MajorityVotingBase.updateVotingSettings.selector ^ MajorityVotingBase.updateMinApprovals.selector
-        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint64,uint8,bool)"));
+        ^ MajorityVotingBase.maxDuration.selector ^ MajorityVotingBase.minProposerVotingPower.selector
+        ^ MajorityVotingBase.votingMode.selector ^ MajorityVotingBase.totalVotingPower.selector
+        ^ MajorityVotingBase.getProposal.selector ^ MajorityVotingBase.updateVotingSettings.selector
+        ^ MajorityVotingBase.updateMinApprovals.selector
+        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint8,bool)"))
+        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint256,uint64,uint64,uint8,bool)"))
+        ^ bytes4(keccak256("createProposal(bytes,(address,uint256,bytes)[],uint64,uint64,bytes)"));
 
     error AlreadyInitialized();
 
@@ -41,6 +44,7 @@ contract MajorityVotingBaseTest is TestBase {
             supportThreshold: 500_000,
             minParticipation: 200_000,
             minDuration: 1 hours,
+            maxDuration: 14 days,
             minProposerVotingPower: 0
         });
     }
@@ -59,6 +63,7 @@ contract MajorityVotingBaseTest is TestBase {
                 supportThreshold: 500_000,
                 minParticipation: 100_000,
                 minDuration: 1 hours,
+                maxDuration: 14 days,
                 minProposerVotingPower: 0
             }),
             token,
@@ -256,6 +261,38 @@ contract MajorityVotingBaseTest is TestBase {
         plugin.updateVotingSettings(defaultNewVotingSettings);
     }
 
+    function test_WhenCallingUpdateVotingSettingsWhereMaxDurationIsShorterThanMinDuration()
+        external
+        givenThePluginIsInitialized
+    {
+        // It reverts if the maximal duration is shorter than the minimal duration
+        defaultNewVotingSettings.maxDuration = defaultNewVotingSettings.minDuration - 1;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MajorityVotingBase.MaxDurationOutOfBounds.selector,
+                defaultNewVotingSettings.minDuration,
+                defaultNewVotingSettings.maxDuration
+            )
+        );
+        plugin.updateVotingSettings(defaultNewVotingSettings);
+    }
+
+    function test_WhenCallingUpdateVotingSettingsWhereMaxDurationIsLongerThanOneYear()
+        external
+        givenThePluginIsInitialized
+    {
+        // It reverts if the maximal duration is longer than one year
+        defaultNewVotingSettings.maxDuration = 365 days + 1;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MajorityVotingBase.MaxDurationOutOfBounds.selector, 365 days, defaultNewVotingSettings.maxDuration
+            )
+        );
+        plugin.updateVotingSettings(defaultNewVotingSettings);
+    }
+
     function test_WhenCallingUpdateVotingSettings2() external givenThePluginIsInitialized {
         // It should change the voting settings successfully
 
@@ -265,6 +302,7 @@ contract MajorityVotingBaseTest is TestBase {
             defaultNewVotingSettings.supportThreshold,
             defaultNewVotingSettings.minParticipation,
             defaultNewVotingSettings.minDuration,
+            defaultNewVotingSettings.maxDuration,
             defaultNewVotingSettings.minProposerVotingPower
         );
 
@@ -274,20 +312,23 @@ contract MajorityVotingBaseTest is TestBase {
             MajorityVotingBase.VotingMode mode,
             uint32 support,
             uint32 participation,
-            uint64 duration,
+            uint64 minDuration,
+            uint64 maxDuration,
             uint256 proposerPower
         ) = (
             plugin.votingMode(),
             plugin.supportThreshold(),
             plugin.minParticipation(),
             plugin.minDuration(),
+            plugin.maxDuration(),
             plugin.minProposerVotingPower()
         );
 
         assertEq(uint8(mode), uint8(defaultNewVotingSettings.votingMode));
         assertEq(support, defaultNewVotingSettings.supportThreshold);
         assertEq(participation, defaultNewVotingSettings.minParticipation);
-        assertEq(duration, defaultNewVotingSettings.minDuration);
+        assertEq(minDuration, defaultNewVotingSettings.minDuration);
+        assertEq(maxDuration, defaultNewVotingSettings.maxDuration);
         assertEq(proposerPower, defaultNewVotingSettings.minProposerVotingPower);
     }
 
